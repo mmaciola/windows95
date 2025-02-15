@@ -94,6 +94,7 @@ export class Emulator extends React.Component<{}, EmulatorState> {
   public setupUnloadListeners() {
     const handleClose = async () => {
       await this.saveState();
+      await this.saveDiskImage();
 
       console.log(`Unload: Now done, quitting again.`);
       this.isQuitting = true;
@@ -360,6 +361,7 @@ export class Emulator extends React.Component<{}, EmulatorState> {
     console.log(`🚜 Stopping emulator`);
 
     await this.saveState();
+    await this.saveDiskImage();
     this.unlockMouse();
     await emulator.stop();
     this.setState({ isRunning: false });
@@ -378,12 +380,76 @@ export class Emulator extends React.Component<{}, EmulatorState> {
   }
 
   /**
+   * Save the emulator's modified disk image to disk.
+   */
+  private async saveDiskImage(): Promise<void> {
+    const { emulator } = this.state;
+    const imgPath = (await getStatePath()).replace('.bin', '.img');
+
+    console.log(`saveDiskImage into :` + imgPath);
+
+    if (!emulator || !emulator.disk_images || !emulator.disk_images.hda) {
+      console.log(`saveDiskImage: No disk image present`);
+      return;
+    }
+
+    try {
+      // Convert SyncBuffer to a Uint8Array
+      const diskBuffer = new Uint8Array(emulator.disk_images.hda);
+  
+      // Save the raw buffer as an .img file
+      await fs.outputFile(imgPath, Buffer.from(diskBuffer));
+      console.log(`Disk image saved to ${imgPath}`);
+    } catch (error) {
+      console.warn(`saveDiskImage: Could not save disk image`, error);
+      fs.appendFileSync('log.txt', `saveDiskImage: Could not save disk image: ${error.message}\n${error.stack}\n`);
+    }
+  
+    /*try {
+      const writtenBlocks = emulator.disk_images.hda;//.get_written_blocks();
+      if (!writtenBlocks || writtenBlocks.length === 0) {
+        console.log(`saveDiskImage: No changes to save`);
+        return;
+      }
+
+      let diskBuffer: Buffer;
+      try {
+        diskBuffer = await fs.readFile(imgPath);
+      } catch (readError) {
+        console.warn(`saveDiskImage: Could not read base disk image, creating new`, readError);
+        // Create a blank disk if not found:
+        diskBuffer = Buffer.alloc(emulator.disk_images.hda.byte_length);
+      }
+  
+      // Apply modified blocks
+      const blockSize = 0x100;
+      for (const { sector, data } of writtenBlocks) {
+        const offset = sector * blockSize;
+        if (offset + data.length <= diskBuffer.length) {
+          data.copy(diskBuffer, offset);
+        } else {
+          console.warn(`saveDiskImage: Block at sector ${sector} exceeds disk size`);
+        }
+      }
+  
+      await fs.outputFile(imgPath, diskBuffer);
+      console.log(`Disk image saved to ${imgPath}`);
+    } catch (error) {
+      console.warn(`saveDiskImage: Could not save disk image`, error);
+      fs.appendFileSync('/Users/mtm/Development/random/windows95/log.txt', `saveDiskImage: Could not save disk image: ${error.message}\n${error.stack}`);
+    }
+    fs.appendFileSync('/Users/mtm/Development/random/windows95/log.txt', `saveDiskImage: Fin`);*/
+  }
+
+  /**
    * Take the emulators state and write it to disk. This is possibly
    * a fairly big file.
    */
   private async saveState(): Promise<void> {
     const { emulator } = this.state;
     const statePath = await getStatePath();
+
+    console.log(`saveState: ` + statePath);
 
     if (!emulator || !emulator.save_state) {
       console.log(`restoreState: No emulator present`);
